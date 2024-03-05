@@ -14,7 +14,7 @@ class GestureEMGDataRecoder:
     """
     # 基于肌电信号的有动作手势识别数据采集类
     """
-    def __init__(self, dev_para, exp_para, alg_para):
+    def __init__(self, dev_param, exp_param, alg_param):
         """
         输入参数: 电腕带的设备参数(dict), 包括端口和波特率
                  实验范式的参数(dict), 包括trial的数量，block的数量，以及具体的实验名称
@@ -28,9 +28,9 @@ class GestureEMGDataRecoder:
         self.task_cnt = 0
         self.cur_step_func = self.__init_step_func
 
-        self.__init_device_param(dev_para)
-        self.__init_experiment_param(exp_para)
-        self.__init_algorithm_param(alg_para)
+        self.__init_device_param(dev_param)
+        self.__init_experiment_param(exp_param)
+        self.__init_algorithm_param(alg_param)
 
         # 用于保存采集样本的数据 （N：samples x C: channels x T: timepoints）
         self.emgdata = []
@@ -214,7 +214,6 @@ class GestureEMGDataRecoder:
         self.info_text.draw()
         np.save(os.path.join(os.getcwd(), 'emgdata.npy'), np.array(self.emgdata))
         np.save(os.path.join(os.getcwd(), 'emglabel.npy'), np.array(self.emglabel))
-
         self.window.flip()
         core.wait(3)
         self.finish_experiment_flag = True
