@@ -1,0 +1,27 @@
+{
+    "Paradigm_Params": {
+        "gesture": {
+            "trial_num": 3,
+            "trial_len": 10,
+            "frate": 9,                     
+            "block_num": 2,
+            "force_array": [0, 1, 2, 3, 4]
+        }
+    },
+    "Algorithm_Params": {
+        "EMGNet": {
+            "class": 5, 
+            "drop_out": 0.4, 
+            "time_point": 9, 
+            "channel": 3, 
+            "Nt": 8, 
+            "Ns": 16
+        }
+    },
+    "Device_Params": {
+        "EMGRecoder": {
+            "port": "COM7",
+            "baudrate": 460800
+        }
+    }
+}
