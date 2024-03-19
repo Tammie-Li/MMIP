@@ -23,4 +23,8 @@ class ParadigmManage:
 
     def _noaction_emg_pressure_paradigm(self):
         pass
+
+    def _emg_ssvep_paradigm(self, params_d, params_e, params_a):
+        pass
+
         
