@@ -1,5 +1,6 @@
-from Noaction import NoActionParadigm
-from Gesture import GestureEMGDataRecoder
+from Paradigm.Noaction import NoActionParadigm
+from Paradigm.Gesture import GestureEMGDataRecoder
+from Paradigm.gesture_ssvep import GestureSSVEPParadigm
 
 
 class ParadigmManage:
@@ -8,23 +9,14 @@ class ParadigmManage:
     def __init__(self, name, params):
         self.paradigm_name = name
 
-        self.dev_param = params["Device_Params"]
-        self.alg_param = params["Algorithm_Params"]
-        self.exp_param = params["Paradigm_Params"]
-
         if self.paradigm_name == "gesture":
-            self._gesture_emg_only_paradigm(self.dev_param["EMGRecoder"], self.exp_param["gesture"], self.exp_param["EMGNet"])
-        elif self.paradigm_name == "noaction":
-            self._noaction_emg_pressure_paradigm()
+            pass
+            # self._gesture_emg_only_paradigm(self.dev_param["EMGRecoder"], self.exp_param["gesture"], self.exp_param["EMGNet"])
+        elif self.paradigm_name == "ssvep":
+            self.paradigm = GestureSSVEPParadigm()
+
     
-    def _gesture_emg_only_paradigm(self, params_d, params_e, params_a):
-        paradigm = GestureEMGDataRecoder(params_d, params_e, params_a)
-        paradigm.run()
-
-    def _noaction_emg_pressure_paradigm(self):
-        pass
-
-    def _emg_ssvep_paradigm(self, params_d, params_e, params_a):
-        pass
+    def run(self):
+        self.paradigm.run()
 
         

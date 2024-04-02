@@ -1,8 +1,7 @@
 import copy
-
 from psychopy import visual, event, core
 from Lib.Tang.pressuredetector import Device
-from Lib.Tang.emg import EMGRecoder
+from Lib.Tang.emg import devicepro, Device2
 from Lib.Boruikang.neuracle import Neuracle
 import os, time, random, itertools, serial
 import numpy as np
@@ -11,11 +10,9 @@ import torch
 import multiprocessing
 from multiprocessing import Queue,Event
 
-from Algorithm.AlgorithmManage import AlgorithmManage
 
-
-class NoActionParadigm:
-    def __init__(self, dev_para, exp_para):
+class ActionGestureParadign:
+    def __init__(self, exp_para): 
         self.finish_exp_flag = False
         self.last_label = -1
         self.block_cnt = 0
@@ -23,7 +20,7 @@ class NoActionParadigm:
         self.task_cnt = 0
         self.cur_step_func = self.__init_step_func
         # self.dev_para, dict{"port": , 'baudrate': , 'path': }
-        self.dev_para = dev_para
+        # self.dev_para = dev_para
         # self.exp_para, dict{'trial_num': int->10,                  每个手指多少次 
         #                     'trial_len': int->10,                  每次按压持续的时间   
         #                     'frate': int,                          下位机参数
@@ -36,7 +33,7 @@ class NoActionParadigm:
         self.fresh_cnt = self.exp_para['trial_len'] * self.exp_para['frate']
         self._image_path = os.path.join(os.getcwd(), "Lib", "Image", "finger.jpg")
 
-        self.parm = {'port':'COM4','baudrate': 460800}
+        self.parm = {'port':'COM7','baudrate': 460800}
         self.ctrparm = {}
         self.ctrparm['stopEv'] = Event()
         self.ctrparm['backQue'] = Queue()
@@ -44,7 +41,7 @@ class NoActionParadigm:
         self.emgdata = []
         self.emglabel = []
 
-        alg_params = {"class": 5, "drop_out": 0.4, "time_point": 9, "channel": 3, "Nt": 8, "Ns": 16, "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")}
+        alg_params = {"class": 5, "drop_out": 0.5, "time_point": 9, "channel": 3, "Nt": 8, "Ns": 16, "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")}
         self.algorithm = AlgorithmManage("EMGNet", alg_params)
 
     def run(self):
@@ -60,22 +57,14 @@ class NoActionParadigm:
     def __init_step_func(self):
         """实验范式初始化"""
         self.alldata = []
-        self.press_device = Device(self.dev_para)
-        self.press_device.start()
-
         self.emg_device = Device2(self.parm, self.ctrparm)
         self.emg_device.start()
-
-        # self.neuracle = Neuracle(time_buffer=1)
-        # self.neuracle.start()
 
         # 定义psychopy窗口
         # 刺激和提示窗口
         self.window = visual.Window(size=(1000, 800), units='pix', color=(0.94, 0.94, 0.94),allowGUI=True, allowStencil=True, screen=-1)
-
         self.image = visual.ImageStim(win=self.window, pos=(0,-90), image=self._image_path)
         self.image.draw()
-
 
         self.res_img = []
         for i in range(5):
@@ -88,24 +77,6 @@ class NoActionParadigm:
                                          pos=(0,330),height=40, wrapWidth=1000,color='red')
         self.info_text.draw()
 
-        self.ptexts = []
-        self.atexts = []
-        ppos = [(-240,-20),(-130,200),(20,240),(160,200),(260,100)]
-        apos = [(-240, -60), (-130, 160), (20, 200), (160, 160), (260, 60)]
-    
-        for i in range(5):
-            tm = visual.TextStim(win=self.window, anchorHoriz='center', anchorVert='center',
-                                             text='',
-                                             pos=ppos[i], height=30, wrapWidth=200, color='green')
-            tm.draw()
-            self.ptexts.append(tm)
-
-        for i in range(5):
-            tm = visual.TextStim(win=self.window, anchorHoriz='center', anchorVert='center',
-                                             text='',
-                                             pos=apos[i], height=30, wrapWidth=200, color='blue')
-            tm.draw()
-            self.atexts.append(tm)
 
         self.window.flip()
 
@@ -158,11 +129,6 @@ class NoActionParadigm:
             self.info_text.setText(u'Block: %d, Trial: %d, 共计第%d/%d个任务'%(self.block_cnt, self.trial_cnt, self.task_cnt, self.task_sum))
             self.info_text.draw()
             self.image.draw()
-            for i in range(5):
-                self.ptexts[i].setText('')
-                self.ptexts[i].draw()
-            self.ptexts[curtask[0]].setText('T:' + str(curtask[1]) +'±50'+'g')
-            self.ptexts[curtask[0]].draw()
             self.window.flip()
             core.wait(0.5)
             # self.neuracle.clear_buffer()
@@ -185,10 +151,10 @@ class NoActionParadigm:
             # emg_res = label
             if i % (time * self.exp_para['frate']) == 0:
                 emg_data = self.emg_device.get_data(0.5)
-                # print(emg_data.T)
+                print(emg_data.T)
                 emg_data = np.reshape(emg_data, (1,  emg_data.shape[0], emg_data.shape[1]))
                 y, pred = self.algorithm.forward_inference(copy.deepcopy((emg_data)))
-                #pred = label
+                # pred = label
                 print(pred)
                 emg_res = pred
                 self.emgdata.append(emg_data)
@@ -203,10 +169,10 @@ class NoActionParadigm:
             self.info_text.draw()
             for item in self.ptexts:
                 item.draw()
-            force = self.press_device.tweight
-            for j in range(5):
-                self.atexts[j].setText('%.1fg'%(force[j]))
-                self.atexts[j].draw()
+            # force = self.press_device.tweight
+            # for j in range(5):
+            #     self.atexts[j].setText('%.1fg'%(force[j]))
+            #     self.atexts[j].draw()
             realtimeforce = []
             for text in self.atexts:
                 realtimeforce.append(text.text)
@@ -225,15 +191,14 @@ class NoActionParadigm:
 
 if __name__ == "__main__":
 
-    dev_para = {'port':'COM3','baudrate':115200,'path':r'./data/data.dat'}
     exp_para = {'trial_num': 3,
-                'trial_len': 400,
+                'trial_len': 10,
                 'frate': 10,                          
                 'screen_refresh_rate': 60,        
-                'block_num': 2,
+                'block_num': 1,
                 'force_array': [0, 1, 2, 3, 4],  
                 'press_level': [250]}
-    a = NoActionParadigm(dev_para, exp_para)
+    a = ActionGestureParadign(exp_para)
     a.run()
 
 

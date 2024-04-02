@@ -72,7 +72,7 @@ SRATES = [250,500,1000,2000]
 ULEN = [2,2,3,4]
 
 class EMGRecoder(threading.Thread):
-    def __init__(self, param, ctrprm):
+    def __init__(self, param, ctrprm, pak_length = 256):
         '''
         param: 字典 {'port':'COM5','baudrate':460800}
         ctrprm:
@@ -103,6 +103,9 @@ class EMGRecoder(threading.Thread):
         self.temporal_data = None        
 
         self.devprocount = 1
+
+        # 返回的包的长度
+        self.pak_length = pak_length
 
         self.pkmgr = dataPakManager()
 
@@ -303,14 +306,12 @@ class EMGRecoder(threading.Thread):
                     self.file.write(ndataay.tobytes())
                     self.saveFlg = self.shm.info[8]
 
-            # print(dataay.reshape(self.sampleCount, self.chs))
-
             if self.temporal_data is None: self.temporal_data = dataay.reshape(self.sampleCount, self.chs)
             else: 
-                if (self.temporal_data.shape[0] + self.sampleCount) < 256:
+                if (self.temporal_data.shape[0] + self.sampleCount) < self.pak_length:
                     self.temporal_data = np.concatenate((self.temporal_data, dataay.reshape(self.sampleCount,self.chs)))
                 else:
-                    start = self.temporal_data.shape[0] + self.sampleCount - 256
+                    start = self.temporal_data.shape[0] + self.sampleCount - self.pak_length
                     self.temporal_data = np.concatenate((self.temporal_data[start: ], dataay.reshape(self.sampleCount, self.chs)))
             self.shm.info[2] = sampleN + self.sampleCount  # sampleN
             self.shm.info[1] = curPoint + dataLen  # datapack length
@@ -326,24 +327,16 @@ class EMGRecoder(threading.Thread):
             self.ids = b''
             self.tris = b''
 
-    def get_data(self, time):
-        tmp_point = int(time * 512)
-        data_len = self.temporal_data.shape[0]
-        if data_len < tmp_point:
+    def get_data(self):
+        [data_len, data_channel] = self.temporal_data.shape
+        if data_len < self.pak_length:
             print("目前采集数据时间过短,需要再等待...") #  一般不会出现这种情况
-            return np.random.randint(tmp_point, 3)
+            return np.random.randint(self.pak_length, data_channel)
         return self.temporal_data.T
-
-def devicepro(parm, ctrprm):
-    am = EMGRecoder(parm, ctrprm)
-    am.start()
-    # am.get_data()
-
-
 
 if __name__ == '__main__':
     parm = {'port':'COM8', 'baudrate':460800}
     ctrparm = {}
     ctrparm['stopEv'] = Event()
     ctrparm['backQue'] = Queue()
-    devicepro(parm,ctrparm)
+    # emg_recoder_pro(parm,ctrparm)

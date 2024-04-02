@@ -1,7 +1,7 @@
 import copy, time
 
 from psychopy import visual, event, core
-from Lib.Tang.emg import devicepro, EMGRecoder
+from Lib.Tang.emg import EMGRecoder
 import os, itertools
 import numpy as np
 import torch

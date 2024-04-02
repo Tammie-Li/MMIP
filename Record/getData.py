@@ -4,11 +4,27 @@
 
 import numpy as np
 from Lib.Boruikang.readDataOnline import Neuracle
+from Lib.Tang.emg import EMGRecoder
+from multiprocessing import Event, Queue
 
 
 class sEMGDataReceive:
-    def __init__(self):
-        pass
+    def __init__(self, parm):
+        # parm = {'port':'COM8', 'baudrate':460800}
+        ctrparm = {}
+        ctrparm['stopEv'] = Event()
+        ctrparm['backQue'] = Queue()
+
+        # pak_length, 需要维护缓冲区的长度，默认参数256表示实时更新0.5s的数据
+        self.emg_recorder = EMGRecoder(parm, ctrparm, pak_length=256)
+    
+    def start_record_data(self):
+        self.emg_recorder.start()
+    
+    def get_fix_time_length_data(self):
+        # 取出缓冲区内的数据
+        emg_data = self.emg_recorder.get_data()
+        return emg_data
 
 class EyeTrackingDataReceive:
     def __init__(self):

@@ -1,51 +1,122 @@
-import cv2
+import os
+from psychopy import visual, event, core
 import numpy as np
-import math
-
-pi = math.pi
-location = ['xian','beijing','shanghai','guangzhou','shenzhen','hefei','baoji','xianyang','tongchuan','chengdu','nanchong','jieshu']
-
-length = 361
-width = 260
+from loguru import logger
 
 
-times = [i * 1 / 60 for i in range(300)]    #时间点，60是屏幕刷新率
-freqs = [8 + 0.5*i for i in range(12)] 
+class SSVEPParadigm:
+    def __init__(self, refresh_rate = 30, ):
 
-# freqs = [1+i for i in range(12)]
+        self.window = visual.Window(size=(1920, 1080), units='pix', color=(-1, -1, -1),
+                                    allowGUI=True, allowStencil=True, screen=-1)
 
-phases = [0]
-pos = [[ 90*(i//4+1) + width*(i//4) - 30, 20 + 90*(i%4+1) + length*(i%4)]for i in range(12)]
-pos = np.array(pos)
-def main():
-    background = cv2.imread('frame/background/background.png')                    # pic/DiTu.png 
+        # 屏幕刷新率
+        self.refresh_rate = refresh_rate
+        
+        # 40个刺激（可选择区域）4x10排列
+        self.stim_c_num = 10
+        self.stim_r_num = 4
+        self.stim_num = self.stim_c_num * self.stim_r_num
 
-    for frame_num,t in enumerate(times):
+        # 定义刺激频率
+        # 频率为8，8.2，8.4，......, 15.8
+        self.stim_frequency = np.arange(0, self.stim_num) * 0.2 + 8 
+        
+        logger.info('[paradigm] stimuli frequency: {}'.format(self.stim_frequency))
 
-        frame = np.zeros_like(background)
-        frame = frame + background 
+        # 刺激初始相位
+        self.stim_phase_0 = 0   
 
-        for i,img_name in enumerate(location):
-            img = cv2.imread(f'frame/target/{img_name}.png')
-            img = cv2.resize(img,(length,width))
+        # 刺激尺寸
+        self.stim_radius = 160
 
-            bright = cos(i,t)
+        # 刺激块背景颜色
+        self.stim_colors = (1, 1, 1)
 
-            for c in range(3):
-                frame[pos[i][0]:pos[i][0]+width,pos[i][1]:pos[i][1] + length, c] = img[:,:,c] * bright
+        # 刺激块文字颜色
+        self.stim_text_colors = (0, 0, 0)
 
-        cv2.imwrite(f'frame/frame{frame_num+1}.png',frame)
+        x, y = np.meshgrid(np.arange(0, self.stim_c_num), np.arange(0, self.stim_r_num))
+        
+        # 留给文本显示的高度
+        self.init_ver_hegith = 60
 
-def cos(i,x):
-    # f = i // 2          #同一频率有两个目标
-    freq = freqs[i]
-    # p = i % 2           #目标相位有两种
-    # phase = phases[p]
-    return (np.cos(freq * 2 * pi * x ) + 1) / 2  #归一化
+        # 计算刺激的位置
+        self._calculate_pos()
+
+        # 刺激初始化
+        self.stim_size = [self.stim_radius, self.stim_radius]
+        globForm = visual.ElementArrayStim(self.window, nElements=self.stim_num, sfs=0, sizes=self.stim_size,
+                                           xys=self.stim_pos, phases=0, colors=self.stim_colors, elementTex='sin',
+                                           elementMask=None)
+        self.stim = globForm
+
+        # 刺激文本初始化
+        text_list = [str(i+1) for i in range(self.stim_num)]
+        self.stim_text = []
+        for i in range(self.stim_num):
+            self.stim_text.append(visual.TextStim(self.window, text=text_list[i], pos=self.stim_pos[i], colorSpace="rgb255", color=self.stim_text_colors, height=70,
+                                     autoLog=False))
+            
+        # 红三角目标提示初始化
+        self.triangle_tip_radius = 30
+        self.triangle_tip = visual.Polygon(win=self.window, edges=3, units='pix', radius=self.triangle_tip_radius, fillColor='red',
+                                      lineColor='red', pos=[0, 0])
+
+        # 显示系统初始化
+        init_txt = visual.TextStim(win=self.window, text='已进入目标选择界面，请注视要选择的块，"开始"手势', pos=(-580, 440), height=60, color='red')
+        # init_txt.setPos([-init_txt.width/4, init_txt.height*0.8])
+        init_txt.draw()
+
+        # 生成初始化帧
+        globForm_init = visual.ElementArrayStim(self.window, nElements=self.stim_num, sfs=0, sizes=self.stim_size,
+                                           xys=self.stim_pos, phases=0, colors=self.stim_colors, elementTex='sin',
+                                           elementMask=None)
+        self.stim_init = globForm_init
+
+        self.stim_init.draw()
+        for i in range(self.stim_num):
+            self.stim_text[i].draw()
+        self.window.flip()
+        event.waitKeys()
+
+    def start_one_stim(self, time_length):
+        start_stim_time = core.getTime()
+        frame_num = 0
+        while frame_num <= time_length * self.refresh_rate:
+            self.stim.phases = self.stim_phase_0 + frame_num / self.refresh_rate * self.stim_frequency
+            self.stim.draw()
+            for i in range(self.stim_num):
+                self.stim_text[i].draw()
+            # self.triangle_tip.draw()
+            self.window.flip()
+            frame_num = frame_num + 1
+        end_stim_time = core.getTime()
+
+        # 融合眼动和脑电算法获取结果
+        res = 20
+
+        x, y = self.stim_pos[res - 1]
+        self.triangle_tip.fillColor = 'red'
+        self.triangle_tip.lineColor = 'red'
+        self.triangle_tip.setPos([x, y - self.stim_radius * 0.5 - self.triangle_tip_radius])
+        self.triangle_tip.draw()
+        print(end_stim_time - start_stim_time)
+        self.window.flip()
+        event.waitKeys()
+        
+
+    def _calculate_pos(self):
+        # 后续需要修改为根据刺激排列，计算刺激的位置
+        self.stim_pos = []
+        for idx in range(self.stim_num):
+            # 屏幕最左端 + 左边留白 + 位置
+            x_tmp = -960 + 105 + (self.stim_radius + 30) * (idx % 10)
+            y_tmp = 540 - 280 - (self.stim_radius + 70) * (idx // 10)
+            self.stim_pos.append([x_tmp, y_tmp])
 
 
-if __name__ == '__main__':          #走个形式
-    main()
-
+if __name__ == "__main__":
+    para = SSVEPParadigm()
 
 

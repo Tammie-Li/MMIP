@@ -67,7 +67,6 @@ class AlgorithmManage(DataProcess):
 
     def _pre_process_data(self, x):
         x = self.band_pass_filter(data=x, freq_low=20, freq_high=150, fs=500)
-        # x = copy.deepcopy(
         return x
 
 
