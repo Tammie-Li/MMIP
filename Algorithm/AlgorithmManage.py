@@ -1,6 +1,8 @@
 import numpy as np
 import os
 from Algorithm.EMGNet import EMGNet
+from Algorithm.EEGNet import EEGNet
+
 
 import torch
 import os
@@ -53,7 +55,8 @@ class DataProcess:
 
 class AlgorithmManage(DataProcess):
     def __init__(self, algorithm_name, params):
-
+        
+        self.algorithm_name = algorithm_name
         num_classes = params["class"]
         drop_out = params["drop_out"]
         time_point = params["time_point"]
@@ -61,12 +64,22 @@ class AlgorithmManage(DataProcess):
         N_t = params["Nt"]
         N_s = params["Ns"]
         path = params["path"]
-        if algorithm_name == "EMGNet":
+        if self.algorithm_name == "EMGNet":
             self.algorithm = EMGNet(num_classes, drop_out, time_point, channel, N_t, N_s)
             self.algorithm.load_state_dict(torch.load(path, map_location="cpu"))
+        elif self.algorithm_name == "EEGNet":
+            self.algorithm = EEGNet(num_classes)
+            # self.algorithm.load_state_dict(torch.load(path, map_location="cpu"))
+
 
     def _pre_process_data(self, x):
-        x = self.band_pass_filter(data=x, freq_low=20, freq_high=150, fs=500)
+        # 输入网络前，根据不同的要求，先完成预处理
+        if self.algorithm_name == "EMGNet":
+            x = self.band_pass_filter(data=x, freq_low=20, freq_high=150, fs=500)
+        elif self.algorithm_name == "EEGNet":
+            # 先降采样至256Hz
+            # x = self.down_sample(x)
+            x = self.band_pass_filter(data=x, freq_low=0.1, freq_high=48, fs=256)
         return x
 
 

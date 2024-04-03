@@ -10,7 +10,7 @@ import time
 
 
 class Neuracle:
-    def __init__(self, time_buffer=1, hostname='127.0.0.1', port=8712, srate=1000):
+    def __init__(self, time_buffer=7, hostname='127.0.0.1', port=8712, srate=1000):
         channels = []
         with open("./Lib/Boruikang/chan.txt", "r") as f:
             for line in f.readlines():

@@ -7,9 +7,10 @@ from psychopy import visual, event, core
 from loguru import logger
 from Algorithm.AlgorithmManage import AlgorithmManage
 from multiprocessing import Event, Queue
-from Lib.Boruikang.readDataOnline import Neuracle
+from Lib.Boruikang.neuracle import Neuracle
 from Lib.Tang.emg import EMGRecoder
 import copy
+import time
 
 from collections import Counter
 
@@ -135,8 +136,21 @@ class SSVEPParadigm:
         self.triangle_tip.lineColor = 'red'
         self.triangle_tip.setPos([x, y - self.stim_radius * 0.5 - self.triangle_tip_radius])
 
-        self.init_txt.text = "眼动和脑电系统的综合判定为区域为---" + str(res)
+        self.init_txt.text = "眼动和脑电系统的综合判定为区域为---" + str(res) + ""
         self.init_txt.setPos([-345, 440])
+        self.init_txt.draw()
+        self.stim.phases = [0 for i in range(self.stim_num)]
+        self.stim.draw()
+        for i in range(self.stim_num):
+            self.stim_text[i].draw()
+        self.triangle_tip.draw()
+        self.window.flip()
+        while self.show_flag is not True:
+            core.wait(0.1)
+    
+    def show_results_tips(self, message):
+        self.init_txt.text = message
+        self.init_txt.setPos([-700, 440])
         self.init_txt.draw()
         self.stim.phases = [0 for i in range(self.stim_num)]
         self.stim.draw()
@@ -262,7 +276,7 @@ class GestureSSVEPParadigm(Status):
         self.command = 0
 
         # 维护固定大小的队列用于记录最新的数据，标签平滑
-        self.gesture_queue = FixedSizeQueue(50, 0)
+        self.gesture_queue = FixedSizeQueue(100, 0)
 
         self.ssvep_mode = SSVEPParadigm(win=self.window, refresh_rate=30)
         self.video_mode = VideoStreamParadigm(win=self.window)
@@ -275,10 +289,10 @@ class GestureSSVEPParadigm(Status):
 
         # pak_length, 需要维护缓冲区的长度，默认参数256表示实时更新0.5s的数据
         self.emg_recorder = EMGRecoder(emg_parm, ctrparm, pak_length=256)
-        self.eeg_recorder = Neuracle(time_buffer=self.t_len, hostname='127.0.0.1', port=8712, srate=1000)
+        self.eeg_recorder = Neuracle(time_buffer=self.t_len)
 
         # 初始化肌电信号处理算法
-        params = {"class": 5,
+        params_m = {"class": 5,
                   "drop_out": 0.4,
                   "time_point": 9,
                   "channel": 3,
@@ -286,10 +300,21 @@ class GestureSSVEPParadigm(Status):
                   "Ns": 16,
                   "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")
         }
-        self.emg_algorithm = AlgorithmManage("EMGNet", params)
-        self.eeg_algorithm = AlgorithmManage("EEGNet", params)
 
+        # 初始化脑电信号处理算法
+        params_e = {"class": 40,
+                  "drop_out": 0.4,
+                  "time_point": 32,
+                  "channel": 64,
+                  "Nt": 8,
+                  "Ns": 16,
+                  "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")
+        }
+        self.emg_algorithm = AlgorithmManage("EMGNet", params_m)
+        self.eeg_algorithm = AlgorithmManage("EEGNet", params_e)
 
+        # 定义向机器人系统发送的指令
+        self.messsage = None
 
         # 初始化视频流系统
         self.video_mode.start()
@@ -301,6 +326,7 @@ class GestureSSVEPParadigm(Status):
             logger.info('当前最新手势为:{}, 当前系统的状态为:{}'.format(self.command, self.status))
             # 获取最新的一组肌电信号，计算当前指令信息
             x = self.emg_recorder.get_data().reshape(1, 3, 256)
+            time.sleep(0.005)
             gesture, pred = self.emg_algorithm.forward_inference(copy.deepcopy(x))
             # 通过指令平滑、更新指令
             self.gesture_queue.update_fixed_size_queue(pred.item())
@@ -310,7 +336,7 @@ class GestureSSVEPParadigm(Status):
                 self.ssvep_mode.stim_flag = True
             else:
                 self.ssvep_mode.stim_flag = False
-            if self.status == 2 and self.command > 2:
+            if self.status == 2 and self.command != 2:
                 self.ssvep_mode.show_flag = True
             else:
                 self.ssvep_mode.show_flag = False
@@ -323,6 +349,7 @@ class GestureSSVEPParadigm(Status):
         status_monitor_thread = threading.Thread(target=self.status_monitor)
         status_monitor_thread.start() 
         
+        self.eeg_recorder.start()
         # 通过判断当前状态和当前指令实现状态机
         while not self.close_flag:
             if (self.status == 0 and self.command != 1) or (self.status == 2 and self.command == 0):
@@ -338,15 +365,22 @@ class GestureSSVEPParadigm(Status):
                 self.status = 2
                 self.ssvep_mode.start_one_stim(self.t_len)
                 x = self.eeg_recorder.get_data()
-                res = self.eeg_algorithm.forward_inference(copy.deepcopy(x))
-
+                logger.info('从设备中获取到一个脑电信号样本，数据形状为:{}'.format(x.shape))
+                # res = self.eeg_algorithm.forward_inference(copy.deepcopy(x))
+                res = 20
+                self.ssvep_mode.show_result(res)
+                # 指令预装载
+                self.messsage = "区域--" + str(res) + "--消息已发送至机器人系统，指令0回到视频流观察 指令1重新选择，指令4结束"
             if self.status == 2 and self.command == 3:
                 # 发送结果
-                pass
+                self.ssvep_mode.show_flag = True
+                self.ssvep_mode.show_results_tips(self.messsage)
             if self.status == 2 and self.command == 4:
                 # 退出所有程序
                 self.video_mode.close()
                 self.close_flag = True
                 self.window.close()
+                self.eeg_recorder.clear_buffer()
+                self.eeg_recorder.stop()
                 core.quit()
     
