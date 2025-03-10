@@ -9,8 +9,10 @@ from Algorithm.AlgorithmManage import AlgorithmManage
 from multiprocessing import Event, Queue
 from Lib.Boruikang.neuracle import Neuracle
 from Lib.Tang.emg import EMGRecoder
+from Lib.EyeTrack.client import EyeTrackerClient
 import copy
 import time
+import struct
 
 from collections import Counter
 
@@ -36,139 +38,94 @@ class Status:
         self.command = None
 
 class SSVEPParadigm:
-    def __init__(self, win, refresh_rate = 30):
+    def __init__(self, window):
+        
 
-        self.window = win
+        self.window = window
         # 屏幕刷新率
-        self.refresh_rate = refresh_rate
+        self.refresh_rate = 75
         
-        # 40个刺激（可选择区域）4x10排列
-        self.stim_c_num = 10
-        self.stim_r_num = 4
-        self.stim_num = self.stim_c_num * self.stim_r_num
+        # 刺激持续时间
+        self.stim_time = 2.2
 
-        # 定义刺激频率
-        # 频率为8，8.2，8.4，......, 15.8
-        self.stim_frequency = np.arange(0, self.stim_num) * 0.2 + 8 
-        
-        logger.info('[paradigm] stimuli frequency: {}'.format(self.stim_frequency))
+        # 刺激帧数
+        self.stim_len = int(self.stim_time * self.refresh_rate)
 
-        # 刺激初始相位
-        self.stim_phase_0 = 0   
+        # 目标个数
+        self.target_num = 40
 
-        # 刺激尺寸
-        self.stim_radius = 160
+        # 提示文字
+        self.text = visual.TextStim(win=self.window, text="", height=50, color="white", pos=(-400, 0))
+    
+        # 加载ssvep帧
+        stim_path = os.path.join(os.getcwd(), 'Lib', 'frame', 'stim')
+        tips_path = os.path.join(os.getcwd(), 'Lib', 'frame', 'tips')
+        result_path = os.path.join(os.getcwd(), 'Lib', 'frame', 'result')
 
-        # 刺激块背景颜色
-        self.stim_colors = (1, 1, 1)
+        self.stim_list, self.tips_list, self.result_list = [], [], []
 
-        # 刺激块文字颜色
-        self.stim_text_colors = (0, 0, 0)
-
-        # 结束等待标志位
         self.stim_flag, self.show_flag = False, False
 
-        x, y = np.meshgrid(np.arange(0, self.stim_c_num), np.arange(0, self.stim_r_num))
+        for stim in range(self.stim_len):
+            if stim % 10 == 0:
+                self.text.text = f"实验范式准备中，刺激材料加载进度: {stim} / {self.stim_len}"
+                self.text.draw()
+                self.window.flip()
+            path = os.path.join(stim_path, f"{stim:>02d}.png")
+            self.stim_list.append(visual.ImageStim(win=self.window, image=path))
         
-        # 留给文本显示的高度
-        self.init_ver_hegith = 60
+        for idx in range(self.target_num):
+            if idx % 10 == 0:
+                self.text.text = f"实验范式准备中，提示和结果范例加载进度: {idx} / {self.target_num}"
+                self.text.draw()
+                self.window.flip()
+            path = os.path.join(tips_path, f"{idx:>02d}.png")
+            self.tips_list.append(visual.ImageStim(win=self.window, image=path))
+            path = os.path.join(result_path, f"{idx:>02d}.png")
+            self.result_list.append(visual.ImageStim(win=self.window, image=path))
 
-        # 计算刺激的位置
-        self._calculate_pos()
+        self.last_frame = visual.ImageStim(win=self.window, image=os.path.join(os.getcwd(), 'Lib', 'frame', 'last_frame.png'))
+        self.init_frame = visual.ImageStim(win=self.window, image=os.path.join(os.getcwd(), 'Lib', 'frame', 'init_frame.png'))
 
-        # 刺激初始化
-        self.stim_size = [self.stim_radius, self.stim_radius]
-        globForm = visual.ElementArrayStim(self.window, nElements=self.stim_num, sfs=0, sizes=self.stim_size,
-                                           xys=self.stim_pos, phases=0, colors=self.stim_colors, elementTex='sin',
-                                           elementMask=None)
-        self.stim = globForm
 
-        # 红三角目标提示初始化
-        self.triangle_tip_radius = 30
-        self.triangle_tip = visual.Polygon(win=self.window, edges=3, units='pix', radius=self.triangle_tip_radius, fillColor='red',
-                                      lineColor='red', pos=[0, 0])
-
-        # 刺激文本初始化
-        text_list = [str(i+1) for i in range(self.stim_num)]
-        self.stim_text = []
-        for i in range(self.stim_num):
-            self.stim_text.append(visual.TextStim(self.window, text=text_list[i], pos=self.stim_pos[i], colorSpace="rgb255", color=self.stim_text_colors, height=70,
-                                     autoLog=False))
 
     def show_init_ssvep_gui(self):
         # 显示系统初始化
-        self.init_txt = visual.TextStim(win=self.window, text='已进入目标选择界面，请注视要选择的块，"开始"手势', pos=(-580, 440), height=60, color='red')
-        self.init_txt.setPos([-580, 440])
-        self.init_txt.draw()
-
-        # 生成初始化帧
-        globForm_init = visual.ElementArrayStim(self.window, nElements=self.stim_num, sfs=0, sizes=self.stim_size,
-                                           xys=self.stim_pos, phases=0, colors=self.stim_colors, elementTex='sin',
-                                           elementMask=None)
-        self.stim_init = globForm_init
-
-        self.stim_init.draw()
-        for i in range(self.stim_num):
-            self.stim_text[i].draw()
+        # 简单说明被试需要做的事情
+        self.init_frame.draw()
         self.window.flip()
         while self.stim_flag is not True:
             core.wait(0.1)
 
-    def start_one_stim(self, time_length=2):
+    def start_one_stim(self, time_length=2.2):
         start_stim_time = core.getTime()
         frame_num = 0
-        while frame_num <= time_length * self.refresh_rate:
-            self.stim.phases = self.stim_phase_0 + frame_num / self.refresh_rate * self.stim_frequency
-            self.stim.draw()
-            for i in range(self.stim_num):
-                self.stim_text[i].draw()
+        while frame_num < self.stim_len:
+            self.stim_list[frame_num].draw()
             self.window.flip()
             frame_num = frame_num + 1
+        self.last_frame.draw()
+        self.window.flip()
         end_stim_time = core.getTime()
         print(end_stim_time - start_stim_time)
 
     
     def show_result(self, res):
         # 根据用户的选择结果绘制结果提示
-        res = 20
-        x, y = self.stim_pos[res - 1]
-        self.triangle_tip.fillColor = 'red'
-        self.triangle_tip.lineColor = 'red'
-        self.triangle_tip.setPos([x, y - self.stim_radius * 0.5 - self.triangle_tip_radius])
-
-        self.init_txt.text = "眼动和脑电系统的综合判定为区域为---" + str(res) + ""
-        self.init_txt.setPos([-345, 440])
-        self.init_txt.draw()
-        self.stim.phases = [0 for i in range(self.stim_num)]
-        self.stim.draw()
-        for i in range(self.stim_num):
-            self.stim_text[i].draw()
-        self.triangle_tip.draw()
+        res = res - 1 
+        self.result_list[res].draw()
         self.window.flip()
+        core.wait(1)
         while self.show_flag is not True:
             core.wait(0.1)
     
     def show_results_tips(self, message):
-        self.init_txt.text = message
-        self.init_txt.setPos([-700, 440])
-        self.init_txt.draw()
-        self.stim.phases = [0 for i in range(self.stim_num)]
-        self.stim.draw()
-        for i in range(self.stim_num):
-            self.stim_text[i].draw()
-        self.triangle_tip.draw()
+        self.text.text = message
+        self.text.draw()
         self.window.flip()
+        core.wait(1)
         while self.show_flag is not True:
             core.wait(0.1)
-
-    def _calculate_pos(self):
-        # 后续需要修改为根据刺激排列，计算刺激的位置
-        self.stim_pos = []
-        for idx in range(self.stim_num):
-            # 屏幕最左端 + 左边留白 + 位置
-            x_tmp = -960 + 105 + (self.stim_radius + 30) * (idx % 10)
-            y_tmp = 540 - 280 - (self.stim_radius + 70) * (idx // 10)
-            self.stim_pos.append([x_tmp, y_tmp])
 
 
 class VideoStreamParadigm:
@@ -190,7 +147,7 @@ class VideoStreamParadigm:
     def update(self):
         # psychopy实时显示视频流
         if self.image is not None:
-            video_stream = visual.ImageStim(win=self.window, image=self.image)
+            video_stream = visual.ImageStim(win=self.window, image=self.image, size=(1920, 1080))
         else:
             video_stream = self.init_txt
         video_stream.draw()
@@ -207,12 +164,21 @@ class VideoStreamParadigm:
         # self.server.listen(1)
         # self.server.setblocking(False)
         # self.connect, addr = self.server.accept()
+        # 设置TCP通信相关参数
+        server_ip = '127.0.0.1'  # 服务器IP地址
+        server_port = 12345       # 服务器端口号
+        self.buffer_size = 4096*8        # 接收缓冲区大小
 
+        # 创建TCP套接字
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # 连接到服务器
+        self.sock.connect((server_ip, server_port))
         # 设置相机捕获参数
-        self.capture = cv2.VideoCapture(0)
-        if not self.capture.isOpened():
-            print("Error: Could not open video stream.")
-            core.quit()
+        # self.capture = cv2.VideoCapture(0)
+        # if not self.capture.isOpened():
+        #     print("Error: Could not open video stream.")
+        #     core.quit()
 
 
     def receive_video_stream(self):
@@ -220,20 +186,50 @@ class VideoStreamParadigm:
         HOST = '127.0.0.1'
         PORT = 6666
         while not self.close_flag:
-            # data, addr = self.server.recvfrom()
-            # self.image = data
+            img_size_data = self.sock.recv(4)
 
-            # 暂时使用摄像头直接拍摄来模拟
-            ret, frame = self.capture.read()
-            if not ret:
-                print("Error: Could not read frame from video stream.")
-                break
+            # 解析图像大小数据
+            img_size = struct.unpack('I', img_size_data)[0]
+
+            # 接收图像数据
+            img_data = b''
+            while len(img_data) < img_size:
+                data = self.sock.recv(min(self.buffer_size, img_size - len(img_data)))
+                if not data:
+                    break
+                img_data += data
+
+            # 将图像数据解码成图像
+            frame = cv2.imdecode(np.frombuffer(img_data, dtype=np.uint8), 1)
+
+            # # 暂时使用摄像头直接拍摄来模拟
+            # ret, frame = self.capture.read()
+            # if not ret:
+            #     print("Error: Could not read frame from video stream.")
+            #     break
             # 将 OpenCV 图像从 BGR 转换为 RGB 并归一化到 [-1, 1]
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = cv2.flip(frame, 0)
             frame = frame / 255
             self.image = frame
 
+
+class MessageTransmission:
+    def __init__(self, type, ip, port):
+        # 定义两种消息传递的方式，建立多机器人控制端与人机交互端的联系
+        # type1: "ros",     type2: "tcp" 
+        if type == "tcp":
+            try:
+                self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.client.connect((ip, port))
+            except:
+                logger.error("多机器人控制端与人机交互端的通信未能建立成功！！！")
+    
+    def sendMessage(self, message):
+        self.client.sendall(message)
+
+    def close(self):
+        self.client.close()
 
 class FixedSizeQueue:
     def __init__(self, size, init_val):
@@ -262,7 +258,7 @@ class GestureSSVEPParadigm(Status):
         self.window = visual.Window(size=(1920, 1080), units='pix', color=(-1, -1, -1),
                                     allowGUI=True, allowStencil=True, screen=-1)
         # SSVEP刺激系统时间长度
-        self.t_len = 1
+        self.t_len = 2.2
 
         # 记录当前系统处于哪个位置 0表示位于视频流系统，1表示处于SSVEP系统初始化界面，2表示处于SSVEP结果显示界面
         self.status = 0
@@ -278,8 +274,11 @@ class GestureSSVEPParadigm(Status):
         # 维护固定大小的队列用于记录最新的数据，标签平滑
         self.gesture_queue = FixedSizeQueue(100, 0)
 
-        self.ssvep_mode = SSVEPParadigm(win=self.window, refresh_rate=30)
+        self.messsage_transmit = MessageTransmission("tcp", '127.0.0.1', 2345)
+
+        self.ssvep_mode = SSVEPParadigm(window=self.window)
         self.video_mode = VideoStreamParadigm(win=self.window)
+
 
         # 初始化肌电手环参数
         emg_parm = {'port':'COM7', 'baudrate':460800}
@@ -290,9 +289,10 @@ class GestureSSVEPParadigm(Status):
         # pak_length, 需要维护缓冲区的长度，默认参数256表示实时更新0.5s的数据
         self.emg_recorder = EMGRecoder(emg_parm, ctrparm, pak_length=256)
         self.eeg_recorder = Neuracle(time_buffer=self.t_len)
+        self.et_recorder = EyeTrackerClient()
 
         # 初始化肌电信号处理算法
-        params_m = {"class": 5,
+        params_emg = {"class": 5,
                   "drop_out": 0.4,
                   "time_point": 9,
                   "channel": 3,
@@ -300,18 +300,11 @@ class GestureSSVEPParadigm(Status):
                   "Ns": 16,
                   "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")
         }
+        params_eeg, params_et = {}, {}
 
-        # 初始化脑电信号处理算法
-        params_e = {"class": 40,
-                  "drop_out": 0.4,
-                  "time_point": 32,
-                  "channel": 64,
-                  "Nt": 8,
-                  "Ns": 16,
-                  "path": os.path.join(os.getcwd(), "Lib", "Checkpoint", "NUDTMEG_EMGNet_0119.pth")
-        }
-        self.emg_algorithm = AlgorithmManage("EMGNet", params_m)
-        self.eeg_algorithm = AlgorithmManage("EEGNet", params_e)
+        self.emg_algorithm = AlgorithmManage("EMGNet", params_emg)
+        self.eeg_algorithm = AlgorithmManage("CCA", params_emg)
+        self.et_algorithm = AlgorithmManage("SimpleET", params_emg)
 
         # 定义向机器人系统发送的指令
         self.messsage = None
@@ -321,9 +314,13 @@ class GestureSSVEPParadigm(Status):
 
     
     def status_monitor(self):
+        cnt = 0
         # 实时监测肌电信号的指令，以便后续实现状态机的状态切换
         while not self.close_flag:
-            logger.info('当前最新手势为:{}, 当前系统的状态为:{}'.format(self.command, self.status))
+            # 每0.5s刷新一次显示
+            cnt += 1
+            if cnt % 100 == 1: 
+                logger.info('当前最新手势为:{}, 当前系统的状态为:{}'.format(self.command, self.status))
             # 获取最新的一组肌电信号，计算当前指令信息
             x = self.emg_recorder.get_data().reshape(1, 3, 256)
             time.sleep(0.005)
@@ -332,7 +329,7 @@ class GestureSSVEPParadigm(Status):
             self.gesture_queue.update_fixed_size_queue(pred.item())
             self.command = self.gesture_queue.get_the_smooth_command()
 
-            if self.status == 1 and self.command == 2:
+            if self.status == 1 and (self.command == 2 or self.command == 0):
                 self.ssvep_mode.stim_flag = True
             else:
                 self.ssvep_mode.stim_flag = False
@@ -340,16 +337,21 @@ class GestureSSVEPParadigm(Status):
                 self.ssvep_mode.show_flag = True
             else:
                 self.ssvep_mode.show_flag = False
+            
 
     def run(self):
         # 肌电信号处于长期运行状态，是整个系统运行的控制器和节拍器
-        self.emg_recorder.start()
-        # 等待2s, 确保获取足够长度的肌电信号
-        core.wait(2)
-        status_monitor_thread = threading.Thread(target=self.status_monitor)
-        status_monitor_thread.start() 
+        # self.emg_recorder.start()
+        # # 等待2s, 确保获取足够长度的肌电信号
+        # core.wait(2)
+        # status_monitor_thread = threading.Thread(target=self.status_monitor)
+        # status_monitor_thread.start() 
         
-        self.eeg_recorder.start()
+        # self.eeg_recorder.start()
+
+        self.status = 0
+        self.command = 0
+
         # 通过判断当前状态和当前指令实现状态机
         while not self.close_flag:
             if (self.status == 0 and self.command != 1) or (self.status == 2 and self.command == 0):
@@ -363,18 +365,31 @@ class GestureSSVEPParadigm(Status):
             if self.status == 1 and self.command == 2:
                 # 这里特别注意下面两行的顺序，不能替换
                 self.status = 2
+                self.et_recorder.send_message()
                 self.ssvep_mode.start_one_stim(self.t_len)
-                x = self.eeg_recorder.get_data()
-                logger.info('从设备中获取到一个脑电信号样本，数据形状为:{}'.format(x.shape))
-                # res = self.eeg_algorithm.forward_inference(copy.deepcopy(x))
-                res = 20
-                self.ssvep_mode.show_result(res)
+                x_eeg = self.eeg_recorder.get_data()
+                logger.info('从设备中获取到一个脑电信号样本，数据形状为:{}'.format(x_eeg.shape))
+                x_et = np.array(self.et_recorder.receive_message())
+                logger.info('从设备中获取到一个眼动信号样本，数据形状为:{}'.format(x_et.shape))
+                _, res_eeg = self.eeg_algorithm.forward_inference(copy.deepcopy(x_eeg))
+                _, res_et = self.et_algorithm.forward_inference(copy.deepcopy(x_et))
+                res_et, res_eeg = res_et + 1, res_eeg + 1
+                logger.info('眼动推理的结果为:{}'.format(res_et))
+                logger.info('脑电推理的结果为:{}'.format(res_eeg))
+                self.ssvep_mode.show_result(res_et)
                 # 指令预装载
-                self.messsage = "区域--" + str(res) + "--消息已发送至机器人系统，指令0回到视频流观察 指令1重新选择，指令4结束"
+                self.message = "区域--" + str(res_et) + "--消息已发送至机器人系统，指令0回到视频流观察 指令1重新选择，指令4结束"
+            if self.status == 1 and self.command == 0:
+                self.status = 0
             if self.status == 2 and self.command == 3:
                 # 发送结果
                 self.ssvep_mode.show_flag = True
-                self.ssvep_mode.show_results_tips(self.messsage)
+                self.ssvep_mode.show_results_tips(self.message)
+                logger.info('{}'.format(self.message))
+                # print(self.message)
+                # 通过TCP/IP将结果发送至机器人控制端
+                self.messsage_transmit.sendMessage(self.message.encode())
+
             if self.status == 2 and self.command == 4:
                 # 退出所有程序
                 self.video_mode.close()
@@ -382,5 +397,6 @@ class GestureSSVEPParadigm(Status):
                 self.window.close()
                 self.eeg_recorder.clear_buffer()
                 self.eeg_recorder.stop()
+                self.messsage_transmit.sendMessage("close".encode())
                 core.quit()
     

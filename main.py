@@ -4,9 +4,7 @@ import os, json
 from Paradigm.ParadigmManage import ParadigmManage
 
 
-
-paradigm_name = "ssvep"
-
+paradigm_name = "semi-physics"
 
 if __name__ == "__main__":
     # 从json文件中加载默认参数，后续可以通过图形界面根据需要进行修改

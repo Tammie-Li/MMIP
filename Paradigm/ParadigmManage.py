@@ -1,6 +1,7 @@
 from Paradigm.Noaction import NoActionParadigm
 from Paradigm.Gesture import GestureEMGDataRecoder
 from Paradigm.gesture_ssvep import GestureSSVEPParadigm
+from Paradigm.physics import PhysicsParadigm
 
 
 class ParadigmManage:
@@ -9,10 +10,9 @@ class ParadigmManage:
     def __init__(self, name, params):
         self.paradigm_name = name
 
-        if self.paradigm_name == "gesture":
-            pass
-            # self._gesture_emg_only_paradigm(self.dev_param["EMGRecoder"], self.exp_param["gesture"], self.exp_param["EMGNet"])
-        elif self.paradigm_name == "ssvep":
+        if self.paradigm_name == "physics":
+            self.paradigm = PhysicsParadigm()
+        elif self.paradigm_name == "semi-physics":
             self.paradigm = GestureSSVEPParadigm()
 
     

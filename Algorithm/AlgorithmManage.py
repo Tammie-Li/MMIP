@@ -2,6 +2,8 @@ import numpy as np
 import os
 from Algorithm.EMGNet import EMGNet
 from Algorithm.EEGNet import EEGNet
+from Algorithm.CCA import SSVEP_CCA
+from Algorithm.SimpleET import SimpleET
 
 
 import torch
@@ -69,7 +71,12 @@ class AlgorithmManage(DataProcess):
             self.algorithm.load_state_dict(torch.load(path, map_location="cpu"))
         elif self.algorithm_name == "EEGNet":
             self.algorithm = EEGNet(num_classes)
-            # self.algorithm.load_state_dict(torch.load(path, map_location="cpu"))
+        elif self.algorithm_name == "CCA":
+            # 无训练SSVEP算法
+            self.algorithm = SSVEP_CCA(samp_rate=250)
+        elif self.algorithm_name == "SimpleET":
+            # 眼动信号算法，根据绝对位置求解区域
+            self.algorithm = SimpleET()
 
 
     def _pre_process_data(self, x):
@@ -80,10 +87,21 @@ class AlgorithmManage(DataProcess):
             # 先降采样至256Hz
             # x = self.down_sample(x)
             x = self.band_pass_filter(data=x, freq_low=0.1, freq_high=48, fs=256)
+        elif self.algorithm_name == "CCA":
+            x = self.algorithm.pre_filter(x)
         return x
 
 
     def forward_inference(self, x):
+        # 其中0是为了保持与深度学习方法一致的返回格式
+        if self.algorithm_name == "SimpleET":
+            res = self.algorithm.recognize(x)
+            return 0, res
+        if self.algorithm_name == "CCA":
+            x = self._pre_process_data(x)
+            res = self.algorithm.recognize(x)
+            return 0, res
+
         self.algorithm.eval()
         x = self._pre_process_data(x)
         x = torch.tensor(x).float()

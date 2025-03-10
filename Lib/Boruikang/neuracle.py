@@ -1,6 +1,6 @@
 '''
 Coding: utf-8
-Author: Tammie-li
+Author: vector-wlc
 Date: 2021-04-28 09:52:21
 Description: Neuracle 在线获取数据类
 '''
